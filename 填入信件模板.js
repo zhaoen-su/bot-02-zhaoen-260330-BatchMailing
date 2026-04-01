@@ -44,7 +44,7 @@ function getGmailTemplateFromDrafts_(subject_line) {
       inlineImages: inlineImagesObj,
     };
   } catch (e) {
-    throw new Error("Oops - can't find Gmail draft");
+    throw new Error("找不到相符的主旨");
   }
 }
 

@@ -7,9 +7,8 @@ function sendEmails(subjectLine, sheet = SpreadsheetApp.getActiveSheet()) {
   let processedSubjectLine = subjectLine;
   if (!processedSubjectLine) {
     processedSubjectLine = Browser.inputBox(
-      "Mail Merge",
-      "Type or copy/paste the subject line of the Gmail " +
-        "draft message you would like to mail merge with:",
+      "批次寄信小工具",
+      "輸入或貼上草稿欄的主旨名稱（包含大括號）",
       Browser.Buttons.OK_CANCEL,
     );
 

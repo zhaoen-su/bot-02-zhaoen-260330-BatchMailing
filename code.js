@@ -1,7 +1,3 @@
-// Original code by Martin Hawksey, licensed under Apache License 2.0
-// https://developers.google.com/apps-script/samples/automations/mail-merge
-// Modified by CAPSULE CXO TEAM
-
 /**
  * @OnlyCurrentDoc
  */

@@ -8,7 +8,10 @@
  *      （欄位名稱需與試算表第一列的標題完全相同）
  */
 
-const EMAIL_SUBJECT = "Hi {{姓名}}，這是一封來自我們的訊息";
+const EMAIL_SUBJECT = "【CAPSULE】甄選感謝函 - {{姓名}}";
+
+// Drive 上 logo 圖片的檔案 ID（會以 inline image 形式內嵌進信件）
+const INLINE_LOGO_FILE_ID = "1cR75kwNoAapopNax7Ud6LH8uQtjcFP67";
 
 const EMAIL_HTML_TEMPLATE = `
 <!DOCTYPE html>
@@ -29,31 +32,29 @@ const EMAIL_HTML_TEMPLATE = `
               <td style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%); height:6px; font-size:0; line-height:0;">&nbsp;</td>
             </tr>
 
+            <!-- Logo -->
+            <tr>
+              <td align="center" style="padding:40px 48px 0 48px;">
+                <img src="cid:logo" alt="CAPSULE" width="220" style="display:block; border:0; outline:none; text-decoration:none; max-width:220px; height:auto;" />
+              </td>
+            </tr>
+
             <!-- 主要內容 -->
             <tr>
-              <td style="padding:48px 48px 32px 48px;">
+              <td style="padding:32px 48px 32px 48px;">
                 <h1 style="margin:0 0 24px 0; font-size:24px; line-height:1.3; font-weight:700; color:#0f172a;">
-                  Hi {{姓名}} 👋
+                  {{姓名}} 您好：
                 </h1>
                 <p style="margin:0 0 16px 0; font-size:16px; line-height:1.7; color:#334155;">
-                  感謝你撥空閱讀這封信。這裡是信件的主要內容區塊，
-                  你可以在這裡寫下任何想傳達的訊息。
+                  非常感謝您日前特地撥冗參與本公司面試。
+                  基於多項綜合考量，並經過整體評估與審慎討論後，
+                  我們很遺憾的通知您<b>未能錄取</b>。
                 </p>
                 <p style="margin:0 0 32px 0; font-size:16px; line-height:1.7; color:#334155;">
-                  若有任何問題，歡迎直接回覆這封信，我們會盡快回覆你。
+                  再次感謝您對於我們公司的愛護與支持，
+                  未來若有其他適合您的職缺，仍歡迎您再次投遞，
+                  祝福您未來一切順利，謝謝您！
                 </p>
-
-                <!-- CTA 按鈕（不需要可整段刪除） -->
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                  <tr>
-                    <td style="border-radius:10px; background-color:#6366f1;">
-                      <a href="https://example.com"
-                         style="display:inline-block; padding:12px 28px; font-size:15px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:10px;">
-                        了解更多
-                      </a>
-                    </td>
-                  </tr>
-                </table>
               </td>
             </tr>
 
@@ -70,8 +71,16 @@ const EMAIL_HTML_TEMPLATE = `
                 <p style="margin:0 0 4px 0; font-size:13px; line-height:1.6; color:#64748b;">
                   CAPSULE CXO TEAM
                 </p>
-                <p style="margin:0; font-size:12px; line-height:1.6; color:#94a3b8;">
+                <p style="margin:0 0 12px 0; font-size:12px; line-height:1.6; color:#94a3b8;">
                   這封信是由批次寄信小工具自動寄出。
+                </p>
+                <p style="margin:0; font-size:12px; line-height:1.6; color:#94a3b8;">
+                  若不希望再收到此類信件，請
+                  <a href="mailto:unsubscribe@example.com?subject=取消訂閱&body=請將我從寄送名單中移除，謝謝。"
+                     style="color:#6366f1; text-decoration:underline;">
+                    取消訂閱
+                  </a>
+                  。
                 </p>
               </td>
             </tr>
@@ -98,6 +107,10 @@ function getBuiltInTemplate_() {
     .replace(/\n{2,}/g, "\n\n")
     .trim();
 
+  // 從 Drive 載入 logo 圖片，作為 inline image 嵌入信件
+  // key "logo" 對應 HTML 內的 <img src="cid:logo">
+  const logoBlob = DriveApp.getFileById(INLINE_LOGO_FILE_ID).getBlob();
+
   return {
     message: {
       subject: EMAIL_SUBJECT,
@@ -105,7 +118,9 @@ function getBuiltInTemplate_() {
       html: EMAIL_HTML_TEMPLATE,
     },
     attachments: [],
-    inlineImages: {},
+    inlineImages: {
+      logo: logoBlob,
+    },
   };
 }
 

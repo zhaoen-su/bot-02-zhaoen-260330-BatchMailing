@@ -1,8 +1,4 @@
 /**
- * @OnlyCurrentDoc
- */
-
-/**
  * Change these to match the column names you are using for email
  * recipient addresses and email sent column.
  */

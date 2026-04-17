@@ -45,11 +45,20 @@ function sendEmails(subjectLine, sheet = SpreadsheetApp.getActiveSheet()) {
       try {
         const msgObj = fillInTemplateFromObject_(emailTemplate.message, row);
 
-        GmailApp.sendEmail(row[RECIPIENT_COL], msgObj.subject, msgObj.text, {
+        const sendOptions = {
           htmlBody: msgObj.html,
           attachments: emailTemplate.attachments,
           inlineImages: emailTemplate.inlineImages,
-        });
+        };
+        if (SENDER_ALIAS) sendOptions.from = SENDER_ALIAS;
+        if (SENDER_NAME) sendOptions.name = SENDER_NAME;
+
+        GmailApp.sendEmail(
+          row[RECIPIENT_COL],
+          msgObj.subject,
+          msgObj.text,
+          sendOptions,
+        );
         out.push([new Date()]);
       } catch (e) {
         out.push([e.message]);

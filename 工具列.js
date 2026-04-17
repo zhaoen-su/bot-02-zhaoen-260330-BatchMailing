@@ -3,5 +3,8 @@
  */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu("批次寄信").addItem("送出", "sendEmails").addToUi();
+  ui.createMenu("批次寄信")
+    .addItem("送出", "sendEmails")
+    .addItem("送出（自訂 HTML 模板）", "sendEmailsHTML")
+    .addToUi();
 }

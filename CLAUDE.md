@@ -14,7 +14,6 @@ The entire project is a single `code.js` file intended to be used inside Google 
 - `sendEmails()` — main entry point: prompts for a draft subject line, fetches matching Gmail draft as template, iterates sheet rows, sends emails via `GmailApp.sendEmail`, records sent timestamps
 - `getGmailTemplateFromDrafts_()` — finds a Gmail draft by subject, extracts body/attachments/inline images
 - `fillInTemplateFromObject_()` — replaces `{{columnName}}` placeholders in the template with row data
-- `escapeData_()` — escapes special characters for JSON safety during template replacement
 
 Column constants `RECIPIENT_COL` ("收件人") and `EMAIL_SENT_COL` ("已寄出") must match the spreadsheet header names.
 

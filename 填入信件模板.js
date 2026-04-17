@@ -68,27 +68,26 @@ function subjectFilter_(subject_line) {
  * @return {object} message replaced with data
  */
 function fillInTemplateFromObject_(template, data) {
-  let template_string = JSON.stringify(template);
-
-  template_string = template_string.replace(/{{[^{}]+}}/g, (key) => {
-    return escapeData_(data[key.replace(/[{}]+/g, "")] || "");
-  });
-  return JSON.parse(template_string);
+  const replace = (str) =>
+    String(str).replace(
+      /{{([^{}]+)}}/g,
+      (_, key) => data[key.trim()] ?? "",
+    );
+  return {
+    subject: replace(template.subject),
+    text: replace(template.text),
+    html: encodeEmoji_(replace(template.html)),
+  };
 }
 
 /**
- * Escape cell data to make JSON safe.
- * @param {string} str to escape JSON special characters from
- * @return {string} escaped string
+ * GmailApp.sendEmail 的 MIME encoder 無法正確處理 surrogate pair（如 emoji），
+ * 會變成 ? 之類的 placeholder。送出前把所有 U+10000 以上的字元轉成
+ * HTML 數字實體（例如 🔥 → &#128293;），email client 會照常渲染。
  */
-function escapeData_(str) {
-  return str
-    .replace(/[\\]/g, "\\\\")
-    .replace(/[\"]/g, '\\"')
-    .replace(/[\/]/g, "\\/")
-    .replace(/[\b]/g, "\\b")
-    .replace(/[\f]/g, "\\f")
-    .replace(/[\n]/g, "\\n")
-    .replace(/[\r]/g, "\\r")
-    .replace(/[\t]/g, "\\t");
+function encodeEmoji_(str) {
+  return String(str).replace(
+    /[\u{10000}-\u{10FFFF}]/gu,
+    (ch) => `&#${ch.codePointAt(0)};`,
+  );
 }

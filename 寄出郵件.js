@@ -45,20 +45,29 @@ function sendEmails(subjectLine, sheet = SpreadsheetApp.getActiveSheet()) {
       try {
         const msgObj = fillInTemplateFromObject_(emailTemplate.message, row);
 
-        const sendOptions = {
-          htmlBody: msgObj.html,
-          attachments: emailTemplate.attachments,
-          inlineImages: emailTemplate.inlineImages,
-        };
-        if (SENDER_ALIAS) sendOptions.from = SENDER_ALIAS;
-        if (SENDER_NAME) sendOptions.name = SENDER_NAME;
+        let fromHeader = null;
+        if (SENDER_ALIAS || SENDER_NAME) {
+          const addr = SENDER_ALIAS || Session.getActiveUser().getEmail();
+          if (addr) {
+            fromHeader = SENDER_NAME
+              ? `${encodeRfc2047_(SENDER_NAME)} <${addr}>`
+              : addr;
+          }
+        }
 
-        GmailApp.sendEmail(
-          row[RECIPIENT_COL],
-          msgObj.subject,
-          msgObj.text,
-          sendOptions,
-        );
+        const raw = buildMimeMessage_({
+          from: fromHeader,
+          to: row[RECIPIENT_COL],
+          cc: emailTemplate.message.cc,
+          bcc: emailTemplate.message.bcc,
+          subject: msgObj.subject,
+          text: msgObj.text,
+          html: msgObj.html,
+          inlineImages: emailTemplate.inlineImages,
+          attachments: emailTemplate.attachments,
+        });
+
+        Gmail.Users.Messages.send({ raw: base64UrlEncode_(raw) }, "me");
         out.push([new Date()]);
       } catch (e) {
         out.push([e.message]);

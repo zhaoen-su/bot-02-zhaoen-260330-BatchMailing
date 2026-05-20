@@ -2,37 +2,29 @@
  * 為主要操作區的每一列建立 Gmail 草稿、貼上「已預約寄送」標籤，
  * 並把預約資訊寫到「已預約區」分頁。實際寄出由排程觸發器在預定時間到了之後執行。
  *
+ * UI 入口在「預約寄送對話框.js」(HtmlService)，這裡只負責邏輯，方便測試 / 重用。
+ *
  * 流程：
- *   1. 向使用者詢問 Gmail 草稿主旨（作為模板）與「統一預定寄送時間」（可留空）
- *   2. 讀「主要操作區」每一列做變數替換、組 MIME、Gmail.Users.Drafts.create
- *   3. 把該封 draft 對應的 message 加上「已預約寄送」標籤
- *   4. 在「已預約區」寫一列（包含 draftId、預定時間、建立者）
- *   5. 刪掉「主要操作區」上已處理的那一列
+ *   1. 讀「主要操作區」每一列做變數替換、組 MIME、Gmail.Users.Drafts.create
+ *   2. 把該封 draft 對應的 message 加上「已預約寄送」標籤
+ *   3. 在「已預約區」寫一列（含 draftId 連結、預定時間、建立者）
+ *   4. 刪掉「主要操作區」上已處理的那一列
  *
  * 每列預定時間優先序：該列的「預定寄送時間」欄 > 對話框輸入的統一時間。
- * 兩者都沒有 → 該列略過並提示。
+ * 兩者都沒有 → 該列略過並列入 errors。
+ *
+ * @param {string} subjectLine        Gmail 草稿主旨
+ * @param {string} unifiedTimeStr     對話框輸入的統一時間（"YYYY-MM-DDTHH:mm"），可空
+ * @return {{successCount:number, errors:string[]}}
  */
-function createScheduledDrafts() {
+function runCreateScheduledDrafts_(subjectLine, unifiedTimeStr) {
+  if (!subjectLine) throw new Error("請輸入草稿主旨");
+
   ensureSheets();
-
-  const subjectLine = Browser.inputBox(
-    "建立預約寄送（1/2）",
-    "輸入或貼上草稿欄的主旨名稱（包含大括號）",
-    Browser.Buttons.OK_CANCEL,
-  );
-  if (subjectLine === "cancel" || subjectLine === "") return;
-
-  const unifiedTimeStr = Browser.inputBox(
-    "建立預約寄送（2/2）",
-    "統一預定寄送時間（格式 YYYY-MM-DD HH:mm，留空則使用每列「預定寄送時間」欄）",
-    Browser.Buttons.OK_CANCEL,
-  );
-  if (unifiedTimeStr === "cancel") return;
 
   const unifiedTime = unifiedTimeStr ? parseDate_(unifiedTimeStr) : null;
   if (unifiedTimeStr && !unifiedTime) {
-    Browser.msgBox("時間格式無法解析，請改用 YYYY-MM-DD HH:mm");
-    return;
+    throw new Error("統一預定寄送時間格式無法解析");
   }
 
   const emailTemplate = getGmailTemplateFromDrafts_(subjectLine);
@@ -45,15 +37,11 @@ function createScheduledDrafts() {
 
   const dataRange = mainSheet.getDataRange();
   const data = dataRange.getDisplayValues();
-  if (data.length < 2) {
-    Browser.msgBox("「主要操作區」沒有資料列");
-    return;
-  }
+  if (data.length < 2) throw new Error("「主要操作區」沒有資料列");
+
   const heads = data.shift();
-  const recipientIdx = heads.indexOf(RECIPIENT_COL);
-  if (recipientIdx === -1) {
-    Browser.msgBox(`找不到「${RECIPIENT_COL}」欄`);
-    return;
+  if (heads.indexOf(RECIPIENT_COL) === -1) {
+    throw new Error(`「主要操作區」找不到「${RECIPIENT_COL}」欄`);
   }
 
   const rowsToDelete = [];
@@ -64,7 +52,6 @@ function createScheduledDrafts() {
       o[k] = rowArr[j] || "";
       return o;
     }, {});
-
     if (!row[RECIPIENT_COL]) return;
 
     const rowTime = row[MAIN_COL_SCHEDULED_AT]
@@ -107,16 +94,19 @@ function createScheduledDrafts() {
       );
 
       // 標籤套用在 draft 的底層 message 上（draft 本身沒有 label 概念）。
-      // 用 GmailApp 的 thread.addLabel 比直接呼 Gmail.Users.Messages.modify
-      // 簡單，且不需要額外的 OAuth scope。
       const thread = GmailApp.getMessageById(draftResp.message.id).getThread();
       thread.addLabel(label);
+
+      // draftId 欄塞成 HYPERLINK 公式，點擊就跳 Gmail。
+      // getValues 讀回來是公式結果（label 字串 = draftId），所以
+      // processScheduledDrafts 拿到的還是純 draftId 不受影響。
+      const draftLink = `=HYPERLINK("${thread.getPermalink()}","${draftResp.id}")`;
 
       scheduledSheet.appendRow(
         buildRowForSheet_(scheduledSheet, {
           [SCH_COL_RECIPIENT]: row[RECIPIENT_COL],
           [SCH_COL_SUBJECT]: msgObj.subject,
-          [SCH_COL_DRAFT_ID]: draftResp.id,
+          [SCH_COL_DRAFT_ID]: draftLink,
           [SCH_COL_SCHEDULED_AT]: scheduledAt,
           [SCH_COL_CREATED_AT]: new Date(),
           [SCH_COL_OWNER]: owner,
@@ -130,12 +120,7 @@ function createScheduledDrafts() {
   });
 
   // 由下往上刪，避免行號偏移。
-  rowsToDelete
-    .sort((a, b) => b - a)
-    .forEach((r) => mainSheet.deleteRow(r));
+  rowsToDelete.sort((a, b) => b - a).forEach((r) => mainSheet.deleteRow(r));
 
-  const summary =
-    `已建立 ${rowsToDelete.length} 封預約草稿` +
-    (errors.length > 0 ? `\n\n錯誤：\n${errors.join("\n")}` : "");
-  Browser.msgBox(summary);
+  return { successCount: rowsToDelete.length, errors: errors };
 }

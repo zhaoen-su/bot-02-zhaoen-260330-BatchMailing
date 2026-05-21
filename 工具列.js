@@ -3,12 +3,8 @@
  */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  ui.createMenu("批次寄信")
-    .addItem("建立預約寄送", "createScheduledDrafts")
-    .addSeparator()
-    .addItem("啟用排程觸發器", "installScheduledTrigger")
-    .addItem("移除排程觸發器", "removeScheduledTrigger")
-    .addSeparator()
-    .addItem("初始化分頁結構", "ensureSheets")
+  ui.createMenu("預約寄信")
+    .addItem("建立預約寄信", "createScheduledDrafts")
+    .addItem("現在寄出", "sendEmails")
     .addToUi();
 }

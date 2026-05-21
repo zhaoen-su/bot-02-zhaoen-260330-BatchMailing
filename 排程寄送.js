@@ -46,8 +46,15 @@ function removeScheduledTrigger() {
  * 然後逐列 Gmail.Users.Drafts.send，再把該列搬到「已寄出區」。
  *
  * 失敗也搬到已寄出區並寫錯誤訊息，避免下一輪重試同一封造成重寄。
+ *
+ * @param {boolean=} ignoreScheduledTime
+ *   true 時略過「預定時間 ≤ 現在」的檢查，已預約區裡所有 owner 相符
+ *   的列都會立刻送出。給「現在寄出」用。
+ *   注意：觸發器呼叫時會把 event 物件當第一個引數傳進來，所以這裡
+ *   用嚴格相等 `=== true` 比對，避免被誤觸發。
  */
-function processScheduledDrafts() {
+function processScheduledDrafts(ignoreScheduledTime) {
+  const force = ignoreScheduledTime === true;
   ensureSheets();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const scheduledSheet = ss.getSheetByName(SHEET_SCHEDULED);
@@ -76,7 +83,7 @@ function processScheduledDrafts() {
 
     const scheduledAt = parseDate_(rowArr[iScheduledAt]);
     if (!scheduledAt) return;
-    if (scheduledAt.getTime() > now.getTime()) return;
+    if (!force && scheduledAt.getTime() > now.getTime()) return;
 
     const draftId = String(rowArr[iDraftId]);
     let result = "成功";

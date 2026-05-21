@@ -124,3 +124,18 @@ function runCreateScheduledDrafts_(subjectLine, unifiedTimeStr) {
 
   return { successCount: rowsToDelete.length, errors: errors };
 }
+
+/**
+ * 「現在寄出」：把「已預約區」中由自己建立的草稿全部立刻送出（忽略預定時間）。
+ * 觸發器同樣會做這件事但只挑時間到的列；這裡就是手動觸發、不理時間。
+ */
+function sendEmails() {
+  const ui = SpreadsheetApp.getUi();
+  const resp = ui.alert(
+    "現在寄出",
+    "把「已預約區」中由自己建立的草稿全部立刻送出（忽略預定時間）。確定要繼續？",
+    ui.ButtonSet.OK_CANCEL,
+  );
+  if (resp !== ui.Button.OK) return;
+  processScheduledDrafts(true);
+}

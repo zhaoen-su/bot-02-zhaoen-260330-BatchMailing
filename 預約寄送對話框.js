@@ -1,13 +1,16 @@
 /**
- * 「建立預約寄送」HtmlService 對話框：把「草稿主旨」+「統一預定寄送時間」
- * 合併在同一個視窗。比連續兩個 Browser.inputBox 順手，使用者也能看到
- * 即時結果 / 錯誤而不用再彈一個 msgBox。
+ * 「建立預約寄送」HtmlService 對話框：只問「草稿主旨」，預定寄送時間
+ * 自動使用「下一個未到的週五 TRIGGER_HOUR:00」。
+ *
+ * 沿用以前的彈性：使用者若想覆寫個別列的時間，在「主要操作區」的
+ * 「預定寄送時間」欄填日期即可，runCreateScheduledDrafts_ 仍會優先
+ * 採用列上的時間。
  *
  * 流程：
  *   1. 選單呼叫 createScheduledDrafts → showModalDialog
- *   2. 對話框送出表單 → google.script.run.runScheduledDraftCreation(subject, time)
- *   3. server 端跑 runCreateScheduledDrafts_，回傳 { successCount, errors }
- *   4. 對話框顯示結果（不自動關閉，讓使用者讀完錯誤再手動關）
+ *   2. server 端先算好預設時間，連同 HTML 一起回給 client
+ *   3. 對話框送出表單 → google.script.run.runScheduledDraftCreation(subject, time)
+ *   4. server 端跑 runCreateScheduledDrafts_，回傳 { successCount, errors }
  */
 
 /**
@@ -16,24 +19,49 @@
 function createScheduledDrafts() {
   const html = HtmlService.createHtmlOutput(buildScheduleDialogHtml_())
     .setWidth(460)
-    .setHeight(360);
+    .setHeight(320);
   SpreadsheetApp.getUi().showModalDialog(html, "建立預約寄送");
 }
 
 /**
  * 對話框透過 google.script.run 呼叫的 server 端入口。
- * 把實際邏輯薄薄包一層，方便日後想加額外的權限檢查或記錄。
  *
  * @param {string} subjectLine
- * @param {string} scheduledTimeStr 來自 <input type="datetime-local">，
- *                                  格式 "YYYY-MM-DDTHH:mm"；可為空字串。
+ * @param {string} scheduledTimeStr "YYYY-MM-DDTHH:mm"，由對話框 hidden input 傳回
  * @return {{successCount:number, errors:string[]}}
  */
 function runScheduledDraftCreation(subjectLine, scheduledTimeStr) {
   return runCreateScheduledDrafts_(subjectLine, scheduledTimeStr);
 }
 
+/**
+ * 算出「下一個未到的週五 TRIGGER_HOUR:00」。
+ * 用「未到」而非「當週」，避免今天已過週五 10:00 時排到過去時間
+ * 觸發器掃到就馬上送，違反使用者「下次週五一起送」的預期。
+ */
+function nextFridayTenAm_() {
+  const now = new Date();
+  const d = new Date(now);
+  d.setHours(TRIGGER_HOUR, 0, 0, 0);
+  // getDay: 0=Sun, 5=Fri
+  let daysUntilFriday = (5 - d.getDay() + 7) % 7;
+  if (daysUntilFriday === 0 && now.getTime() >= d.getTime()) {
+    daysUntilFriday = 7;
+  }
+  d.setDate(d.getDate() + daysUntilFriday);
+  return d;
+}
+
 function buildScheduleDialogHtml_() {
+  const tz = Session.getScriptTimeZone();
+  const scheduledAt = nextFridayTenAm_();
+  const isoLocal = Utilities.formatDate(scheduledAt, tz, "yyyy-MM-dd'T'HH:mm");
+  const weekdayNames = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
+  const human =
+    Utilities.formatDate(scheduledAt, tz, "yyyy/MM/dd") +
+    `（${weekdayNames[scheduledAt.getDay()]}）` +
+    Utilities.formatDate(scheduledAt, tz, " HH:mm");
+
   return `
 <!DOCTYPE html>
 <html>
@@ -48,12 +76,18 @@ function buildScheduleDialogHtml_() {
     }
     label { display: block; margin-bottom: 16px; font-size: 13px; font-weight: 500; }
     .hint { color: #6b7280; font-size: 11px; margin-top: 4px; font-weight: normal; }
-    input[type="text"], input[type="datetime-local"] {
+    input[type="text"] {
       display: block; width: 100%; box-sizing: border-box;
       padding: 8px 10px; margin-top: 6px;
       border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;
     }
     input:focus { outline: none; border-color: #2563eb; }
+    .scheduled-box {
+      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 16px; font-size: 13px;
+    }
+    .scheduled-box .label { color: #6b7280; font-size: 11px; }
+    .scheduled-box .value { font-weight: 600; margin-top: 2px; }
     .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
     button {
       padding: 8px 16px; border-radius: 6px; font-size: 13px;
@@ -77,13 +111,15 @@ function buildScheduleDialogHtml_() {
       草稿主旨（與 Gmail 草稿欄相符，可含 {{欄位名}}）
       <input name="subject" type="text" required autofocus />
     </label>
-    <label>
-      統一預定寄送時間
-      <input name="time" type="datetime-local" />
+    <div class="scheduled-box">
+      <div class="label">統一預定寄送時間</div>
+      <div class="value">${human}</div>
       <div class="hint">
-        留空則改用每列「預定寄送時間」欄；兩者都空白的列會被略過。
+        如要改個別列的時間，請在「主要操作區」的「預定寄送時間」欄填寫；
+        該欄空白者套用上方時間。
       </div>
-    </label>
+    </div>
+    <input type="hidden" name="time" value="${isoLocal}" />
     <div class="actions">
       <button type="button" class="cancel" onclick="google.script.host.close()">關閉</button>
       <button type="submit" class="primary" id="submit">建立預約</button>

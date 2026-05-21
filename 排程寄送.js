@@ -17,10 +17,11 @@ function installScheduledTrigger() {
   removeScheduledTrigger();
   ScriptApp.newTrigger(TRIGGER_HANDLER)
     .timeBased()
-    .everyHours(TRIGGER_INTERVAL_HOURS)
+    .everyDays(1)
+    .atHour(TRIGGER_HOUR)
     .create();
   Browser.msgBox(
-    `已啟用排程觸發器（每 ${TRIGGER_INTERVAL_HOURS} 小時掃描一次）。\n` +
+    `已啟用排程觸發器（每天 ${TRIGGER_HOUR}:00 掃描一次）。\n` +
       `執行身份：${Session.getEffectiveUser().getEmail()}`,
   );
 }

@@ -39,7 +39,9 @@ const LABEL_SCHEDULED = "已預約寄送";
 
 // 觸發器 ──────────────────────────────────────────────────
 const TRIGGER_HANDLER = "processScheduledDrafts";
-const TRIGGER_INTERVAL_HOURS = 1;
+// 每日固定時間掃描「已預約區」。Apps Script 的時間觸發器是「附近」觸發，
+// 實際開始時間會落在指定小時的 0–59 分之間。
+const TRIGGER_HOUR = 10;
 
 /**
  * 寄件人「身份識別字串」，用來在「已預約區」標記列的擁有者。

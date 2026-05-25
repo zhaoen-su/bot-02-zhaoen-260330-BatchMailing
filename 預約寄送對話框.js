@@ -1,6 +1,6 @@
 /**
- * 「建立預約寄送」HtmlService 對話框：只問「草稿主旨」，預定寄送時間
- * 自動使用「下一個未到的週五 TRIGGER_HOUR:00」。
+ * 「建立預約寄送」HtmlService 對話框：問「草稿主旨」與「統一預定寄送時間」。
+ * 時間欄預填「下一個未到的週五 TRIGGER_HOUR:00」，但可隨意改。
  *
  * 沿用以前的彈性：使用者若想覆寫個別列的時間，在「主要操作區」的
  * 「預定寄送時間」欄填日期即可，runCreateScheduledDrafts_ 仍會優先
@@ -18,8 +18,8 @@
  */
 function createScheduledDrafts() {
   const html = HtmlService.createHtmlOutput(buildScheduleDialogHtml_())
-    .setWidth(460)
-    .setHeight(320);
+    .setWidth(480)
+    .setHeight(400);
   SpreadsheetApp.getUi().showModalDialog(html, "建立預約寄送");
 }
 
@@ -27,7 +27,7 @@ function createScheduledDrafts() {
  * 對話框透過 google.script.run 呼叫的 server 端入口。
  *
  * @param {string} subjectLine
- * @param {string} scheduledTimeStr "YYYY-MM-DDTHH:mm"，由對話框 hidden input 傳回
+ * @param {string} scheduledTimeStr "YYYY-MM-DDTHH:mm"，由對話框 datetime-local 欄位傳回
  * @return {{successCount:number, errors:string[]}}
  */
 function runScheduledDraftCreation(subjectLine, scheduledTimeStr) {
@@ -68,64 +68,106 @@ function buildScheduleDialogHtml_() {
 <head>
   <base target="_top">
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Roboto:wght@400;500&family=Roboto+Mono&display=swap">
   <style>
+    * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
-                   'PingFang TC', 'Microsoft JhengHei', sans-serif;
-      margin: 0; padding: 20px; color: #1f2937;
+      font-family: 'Roboto', 'Google Sans', 'PingFang TC',
+                   'Microsoft JhengHei', -apple-system, sans-serif;
+      margin: 0; padding: 24px; background: #fff;
+      color: #202124; font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
-    label { display: block; margin-bottom: 16px; font-size: 13px; font-weight: 500; }
-    .hint { color: #6b7280; font-size: 11px; margin-top: 4px; font-weight: normal; }
-    input[type="text"] {
-      display: block; width: 100%; box-sizing: border-box;
-      padding: 8px 10px; margin-top: 6px;
-      border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;
+
+    .field { margin-bottom: 20px; }
+    .field-label {
+      display: block; font-size: 12px; font-weight: 500;
+      color: #5f6368; margin-bottom: 6px; letter-spacing: 0.3px;
     }
-    input:focus { outline: none; border-color: #2563eb; }
-    .scheduled-box {
-      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;
-      padding: 10px 12px; margin-bottom: 16px; font-size: 13px;
+    .field input {
+      display: block; width: 100%; height: 40px;
+      padding: 8px 12px; font-size: 14px; font-family: inherit;
+      color: #202124; background: #fff;
+      border: 1px solid #dadce0; border-radius: 4px;
+      outline: none; transition: border-color .15s, box-shadow .15s;
     }
-    .scheduled-box .label { color: #6b7280; font-size: 11px; }
-    .scheduled-box .value { font-weight: 600; margin-top: 2px; }
-    .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+    .field input:hover { border-color: #80868b; }
+    .field input:focus {
+      border-color: #1a73e8;
+      box-shadow: inset 0 0 0 1px #1a73e8;
+    }
+    .field-hint {
+      font-size: 12px; color: #5f6368; margin-top: 6px; line-height: 1.45;
+    }
+    .field-hint code {
+      font-family: 'Roboto Mono', monospace;
+      background: #f1f3f4; color: #202124;
+      padding: 1px 5px; border-radius: 3px; font-size: 11px;
+    }
+
+    .actions {
+      display: flex; justify-content: flex-end; gap: 8px;
+      margin-top: 8px;
+    }
     button {
-      padding: 8px 16px; border-radius: 6px; font-size: 13px;
-      border: none; cursor: pointer;
+      font-family: 'Google Sans', 'Roboto', sans-serif;
+      font-size: 14px; font-weight: 500; letter-spacing: 0.25px;
+      height: 36px; padding: 0 24px;
+      border: none; border-radius: 4px; cursor: pointer;
+      transition: background .15s, box-shadow .15s;
     }
-    button.primary { background: #2563eb; color: #fff; }
-    button.primary:disabled { background: #93c5fd; cursor: progress; }
-    button.cancel { background: #f3f4f6; color: #374151; }
-    #result {
-      margin-top: 16px; font-size: 12px; white-space: pre-line;
-      padding: 10px 12px; border-radius: 6px;
+    button.text { background: transparent; color: #1a73e8; padding: 0 16px; }
+    button.text:hover { background: rgba(26,115,232,.08); }
+    button.text:active { background: rgba(26,115,232,.16); }
+
+    button.primary { background: #1a73e8; color: #fff; }
+    button.primary:hover {
+      background: #1765cc;
+      box-shadow: 0 1px 2px 0 rgba(60,64,67,.3),
+                  0 1px 3px 1px rgba(60,64,67,.15);
     }
-    #result.ok    { background: #ecfdf5; color: #065f46; }
-    #result.error { background: #fef2f2; color: #991b1b; }
-    #result:empty { display: none; }
+    button.primary:disabled {
+      background: #f1f3f4; color: #80868b;
+      cursor: not-allowed; box-shadow: none;
+    }
+
+    .alert {
+      margin-top: 16px; padding: 12px 16px;
+      font-size: 13px; line-height: 1.5; white-space: pre-line;
+      border-radius: 4px;
+    }
+    .alert.ok    { background: #e6f4ea; color: #137333; }
+    .alert.error { background: #fce8e6; color: #c5221f; }
+    .alert:empty { display: none; }
   </style>
 </head>
 <body>
   <form id="form">
-    <label>
-      草稿主旨（與 Gmail 草稿欄相符，可含 {{欄位名}}）
-      <input name="subject" type="text" required autofocus />
-    </label>
-    <div class="scheduled-box">
-      <div class="label">統一預定寄送時間</div>
-      <div class="value">${human}</div>
-      <div class="hint">
-        如要改個別列的時間，請在「主要操作區」的「預定寄送時間」欄填寫；
-        該欄空白者套用上方時間。
+    <div class="field">
+      <label class="field-label" for="subject">草稿主旨</label>
+      <input id="subject" name="subject" type="text" required autofocus />
+      <div class="field-hint">
+        與 Gmail 草稿欄相符，可含 <code>{{欄位名}}</code> 變數。
       </div>
     </div>
-    <input type="hidden" name="time" value="${isoLocal}" />
+    <div class="field">
+      <label class="field-label" for="time">統一預定寄送時間</label>
+      <input id="time" name="time" type="datetime-local"
+             value="${isoLocal}" required />
+      <div class="field-hint">
+        預設為下一個未到的週五 ${TRIGGER_HOUR}:00（${human}），可改成任何時間。
+      </div>
+    </div>
     <div class="actions">
-      <button type="button" class="cancel" onclick="google.script.host.close()">關閉</button>
+      <button type="button" class="text"
+              onclick="google.script.host.close()">關閉</button>
       <button type="submit" class="primary" id="submit">建立預約</button>
     </div>
   </form>
-  <div id="result"></div>
+  <div id="result" class="alert"></div>
   <script>
     const form = document.getElementById('form');
     const submitBtn = document.getElementById('submit');
@@ -136,12 +178,12 @@ function buildScheduleDialogHtml_() {
       const fd = new FormData(form);
       submitBtn.disabled = true;
       submitBtn.textContent = '建立中…';
-      result.className = '';
+      result.className = 'alert';
       result.textContent = '';
 
       google.script.run
         .withSuccessHandler((r) => {
-          result.className = r.errors.length ? 'error' : 'ok';
+          result.className = 'alert ' + (r.errors.length ? 'error' : 'ok');
           result.textContent =
             '已建立 ' + r.successCount + ' 封預約草稿' +
             (r.errors.length ? '\\n\\n錯誤：\\n' + r.errors.join('\\n') : '');
@@ -149,7 +191,7 @@ function buildScheduleDialogHtml_() {
           submitBtn.textContent = '建立預約';
         })
         .withFailureHandler((err) => {
-          result.className = 'error';
+          result.className = 'alert error';
           result.textContent = '失敗：' + err.message;
           submitBtn.disabled = false;
           submitBtn.textContent = '建立預約';

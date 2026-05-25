@@ -17,17 +17,18 @@ function installScheduledTrigger() {
   removeScheduledTrigger();
   ScriptApp.newTrigger(TRIGGER_HANDLER)
     .timeBased()
-    .everyDays(1)
-    .atHour(TRIGGER_HOUR)
+    .everyHours(1)
     .create();
   Browser.msgBox(
-    `已啟用排程觸發器（每天 ${TRIGGER_HOUR}:00 掃描一次）。\n` +
+    `已啟用排程觸發器（每小時掃描一次「已預約區」）。\n` +
       `執行身份：${Session.getEffectiveUser().getEmail()}`,
   );
 }
 
 /**
  * 移除這個專案內所有指向 TRIGGER_HANDLER 的觸發器。
+ * 注意：每個 Apps Script 使用者只看得到自己安裝的觸發器，
+ * 所以這裡也只會移除「目前執行者自己」安裝的那些。
  */
 function removeScheduledTrigger() {
   const triggers = ScriptApp.getProjectTriggers().filter(
@@ -37,6 +38,21 @@ function removeScheduledTrigger() {
   if (triggers.length > 0) {
     SpreadsheetApp.getActive().toast(`已移除 ${triggers.length} 個排程觸發器`);
   }
+  return triggers.length;
+}
+
+/**
+ * 給選單用的「停用排程觸發器」入口。
+ * 跟 removeScheduledTrigger 的差別：不管有沒有移除到都會跳訊息給使用者看，
+ * 避免從選單按了沒反應的困惑。
+ */
+function removeScheduledTriggerFromMenu() {
+  const n = removeScheduledTrigger();
+  Browser.msgBox(
+    n > 0
+      ? `已移除 ${n} 個排程觸發器（執行身份：${Session.getEffectiveUser().getEmail()}）。`
+      : `目前沒有由你（${Session.getEffectiveUser().getEmail()}）安裝的排程觸發器。`,
+  );
 }
 
 /**
@@ -55,6 +71,7 @@ function removeScheduledTrigger() {
  */
 function processScheduledDrafts(ignoreScheduledTime) {
   const force = ignoreScheduledTime === true;
+  assertSenderConfigured_();
   ensureSheets();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const scheduledSheet = ss.getSheetByName(SHEET_SCHEDULED);

@@ -9,10 +9,15 @@ const RECIPIENT_COL = "收件者";
 const MAIN_COL_SCHEDULED_AT = "預定寄送時間";
 
 // 寄件人 ──────────────────────────────────────────────────
-// 以別名身份寄出；留空字串代表用預設帳號寄出。
+// 以別名身份寄出；從「專案設定 → 指令碼屬性」讀取，方便不同部署
+// 環境用不同值，不必改程式。沒設定就 fallback 成空字串 = 用預設帳號寄出。
 // 必須是 GmailApp.getAliases() 回傳清單內的地址（執行 checkAliases 驗證）。
-const SENDER_ALIAS = "";
-const SENDER_NAME = "";
+//
+// 設定 key：SENDER_ALIAS（例：hr@yourdomain.com）、SENDER_NAME（例：HR 部門）
+const SENDER_ALIAS =
+  PropertiesService.getScriptProperties().getProperty("SENDER_ALIAS") || "";
+const SENDER_NAME =
+  PropertiesService.getScriptProperties().getProperty("SENDER_NAME") || "";
 
 // 分頁名稱 ────────────────────────────────────────────────
 const SHEET_MAIN = "主要操作區";
@@ -39,17 +44,49 @@ const LABEL_SCHEDULED = "已預約寄送";
 
 // 觸發器 ──────────────────────────────────────────────────
 const TRIGGER_HANDLER = "processScheduledDrafts";
-// 每日固定時間掃描「已預約區」。Apps Script 的時間觸發器是「附近」觸發，
-// 實際開始時間會落在指定小時的 0–59 分之間。
+// 觸發器本身設定為每小時掃一次「已預約區」，不依賴這個值。
+// 這個常數只給「建立預約寄送」對話框算「下一個未到的週五 ?:00」作為預設時間，
+// 例如想改成「下一個週五 14:00」就把 14 寫在這裡。
 const TRIGGER_HOUR = 10;
 
 /**
  * 寄件人「身份識別字串」，用來在「已預約區」標記列的擁有者。
- * 有設別名就用別名；沒有就退回實際帳號 email。
- *
  * 觸發器執行時，getEffectiveUser() 回的是觸發器擁有者，所以這個值會跟
  * 當初「建立預約寄送」時寫入的值相符 → 觸發器只會處理自己建立的列。
+ *
+ * 呼叫端應先跑 assertSenderConfigured_() 確認 SENDER_ALIAS 已設定。
  */
 function getSenderIdentity_() {
-  return SENDER_ALIAS || Session.getEffectiveUser().getEmail();
+  return SENDER_ALIAS;
+}
+
+/**
+ * 驗證寄件人 alias / name 已設定且 alias 真的被 Gmail 授權。
+ * 設計目的：避免「Properties 沒設」或「Gmail 沒把該地址列為 send-as」時
+ * Gmail 後端默默把 From 改回執行者本人帳號，造成寄件人對外身份不一致。
+ *
+ * 三種失敗都會直接拋錯：
+ *   1. SENDER_ALIAS 為空字串
+ *   2. SENDER_NAME 為空字串
+ *   3. SENDER_ALIAS 不在 GmailApp.getAliases() 清單內
+ */
+function assertSenderConfigured_() {
+  if (!SENDER_ALIAS) {
+    throw new Error(
+      "SENDER_ALIAS 未設定。請到「專案設定 → 指令碼屬性」新增 key=SENDER_ALIAS。",
+    );
+  }
+  if (!SENDER_NAME) {
+    throw new Error(
+      "SENDER_NAME 未設定。請到「專案設定 → 指令碼屬性」新增 key=SENDER_NAME。",
+    );
+  }
+  const aliases = GmailApp.getAliases();
+  if (aliases.indexOf(SENDER_ALIAS) === -1) {
+    throw new Error(
+      `SENDER_ALIAS "${SENDER_ALIAS}" 不在 Gmail 授權清單內。請到 Gmail 設定 →` +
+        `「帳戶和匯入」→「以這個地址寄送郵件」新增並完成驗證，或執行 checkAliases ` +
+        `查看目前可用別名（${aliases.join("、") || "目前清單為空"}）。`,
+    );
+  }
 }

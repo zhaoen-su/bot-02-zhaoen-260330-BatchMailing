@@ -19,6 +19,7 @@
  */
 function runCreateScheduledDrafts_(subjectLine, unifiedTimeStr) {
   if (!subjectLine) throw new Error("請輸入草稿主旨");
+  assertSenderConfigured_();
 
   ensureSheets();
 
@@ -66,15 +67,9 @@ function runCreateScheduledDrafts_(subjectLine, unifiedTimeStr) {
     try {
       const msgObj = fillInTemplateFromObject_(emailTemplate.message, row);
 
-      let fromHeader = null;
-      if (SENDER_ALIAS || SENDER_NAME) {
-        const addr = SENDER_ALIAS || Session.getEffectiveUser().getEmail();
-        if (addr) {
-          fromHeader = SENDER_NAME
-            ? `${encodeRfc2047_(SENDER_NAME)} <${addr}>`
-            : addr;
-        }
-      }
+      // assertSenderConfigured_ 已確保 alias / name 都非空且 alias 被 Gmail 授權，
+      // 所以這裡可以直接組「Name <alias>」而不再 fallback。
+      const fromHeader = `${encodeRfc2047_(SENDER_NAME)} <${SENDER_ALIAS}>`;
 
       const raw = buildMimeMessage_({
         from: fromHeader,

@@ -56,6 +56,287 @@ function removeScheduledTriggerFromMenu() {
 }
 
 /**
+ * 給選單用的「檢查排程觸發器狀態」入口。
+ * 開啟 HTML 對話框，呈現：
+ *   - 目前執行身份 + SENDER_ALIAS/NAME 的設定與授權狀態
+ *   - 屬於這個身份的觸發器清單（handler / event type / source / id）
+ *   - 「已預約區」屬於這個身份的待寄列數與最近一筆預定時間
+ *
+ * 目的：讓使用者一眼看出「是否真的有觸發器在跑」「為什麼到時間沒寄」。
+ */
+function checkTriggerStatus() {
+  const data = collectTriggerStatus_();
+  const html = HtmlService.createHtmlOutput(buildTriggerStatusHtml_(data))
+    .setWidth(520)
+    .setHeight(540);
+  SpreadsheetApp.getUi().showModalDialog(html, "排程觸發器狀態");
+}
+
+/**
+ * 蒐集要顯示的觸發器狀態。
+ * 注意：ScriptApp.getProjectTriggers() 只看得到「呼叫者自己」安裝的觸發器，
+ * 所以這裡看到的數量就是「會幫目前使用者處理草稿的觸發器」數量。
+ */
+function collectTriggerStatus_() {
+  const me = Session.getEffectiveUser().getEmail();
+
+  const triggers = ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === TRIGGER_HANDLER)
+    .map((t) => ({
+      id: t.getUniqueId(),
+      handler: t.getHandlerFunction(),
+      eventType: String(t.getEventType()),
+      source: String(t.getTriggerSource()),
+    }));
+
+  // SENDER_ALIAS 設定與授權狀態 — 觸發器到時間真的會跑，但如果 alias
+  // 沒授權，processScheduledDrafts 進去就會被 assertSenderConfigured_ 擋掉。
+  const aliasAuthorized = SENDER_ALIAS
+    ? safeIsAliasAuthorized_(SENDER_ALIAS)
+    : null;
+
+  // 「已預約區」中屬於目前 owner 的列數 + 最近一筆預定時間
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tz = ss.getSpreadsheetTimeZone();
+  const owner = SENDER_ALIAS || me;
+  let pendingCount = 0;
+  let nextScheduledAt = null;
+  const sheet = ss.getSheetByName(SHEET_SCHEDULED);
+  if (sheet && sheet.getLastRow() >= 2) {
+    const all = sheet
+      .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+      .getValues();
+    const heads = all.shift();
+    const iOwner = heads.indexOf(SCH_COL_OWNER);
+    const iAt = heads.indexOf(SCH_COL_SCHEDULED_AT);
+    all.forEach((r) => {
+      if (String(r[iOwner]) !== owner) return;
+      pendingCount++;
+      const d = parseDate_(r[iAt]);
+      if (d && (!nextScheduledAt || d < nextScheduledAt)) nextScheduledAt = d;
+    });
+  }
+
+  return {
+    user: me,
+    senderAlias: SENDER_ALIAS,
+    senderName: SENDER_NAME,
+    aliasAuthorized,
+    triggers,
+    pendingCount,
+    nextScheduledAt: nextScheduledAt
+      ? Utilities.formatDate(nextScheduledAt, tz, "yyyy-MM-dd HH:mm")
+      : null,
+  };
+}
+
+/**
+ * 包一層 try/catch — GmailApp.getAliases 在沒授權或被佔用時會丟錯，
+ * 不該讓整個狀態對話框因此打不開。失敗回 null 表示「無法判斷」。
+ */
+function safeIsAliasAuthorized_(alias) {
+  try {
+    return GmailApp.getAliases().indexOf(alias) !== -1;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 組裝狀態對話框的 HTML。沿用「預約寄送對話框」的 Material 風格。
+ * 所有動態值都走 escapeHtml_ 避免 XSS（draftId / 試算表內容可能含 < > & ）。
+ */
+function buildTriggerStatusHtml_(data) {
+  const esc = escapeHtml_;
+
+  const aliasBadge = !data.senderAlias
+    ? `<span class="badge warn">未設定</span>`
+    : data.aliasAuthorized === false
+      ? `<span class="badge error">未被 Gmail 授權</span>`
+      : data.aliasAuthorized === true
+        ? `<span class="badge ok">已授權</span>`
+        : `<span class="badge">無法驗證</span>`;
+
+  const nameBadge = data.senderName
+    ? esc(data.senderName)
+    : `<span class="badge warn">未設定</span>`;
+
+  const triggerBlock =
+    data.triggers.length === 0
+      ? `<div class="empty">
+           目前由你（${esc(data.user)}）安裝的排程觸發器：0 個。<br/>
+           從選單「啟用排程觸發器」可以新增。
+         </div>`
+      : data.triggers
+          .map(
+            (t, i) => `
+            <div class="trigger-item">
+              <div class="trigger-title">觸發器 ${i + 1}</div>
+              <dl>
+                <dt>Handler</dt><dd><code>${esc(t.handler)}</code></dd>
+                <dt>事件類型</dt><dd>${esc(t.eventType)}</dd>
+                <dt>來源</dt><dd>${esc(t.source)}</dd>
+                <dt>Unique ID</dt><dd><code>${esc(t.id)}</code></dd>
+              </dl>
+            </div>`,
+          )
+          .join("");
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&family=Roboto:wght@400;500&family=Roboto+Mono&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Roboto','Google Sans','PingFang TC','Microsoft JhengHei',-apple-system,sans-serif;
+      margin: 0; padding: 24px; background: #fff;
+      color: #202124; font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    h2 {
+      font-family: 'Google Sans', sans-serif;
+      font-size: 16px; font-weight: 500; margin: 0 0 16px;
+    }
+    .section { margin-bottom: 20px; }
+    .section-title {
+      font-size: 11px; font-weight: 500; color: #5f6368;
+      letter-spacing: 0.5px; margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .row {
+      display: flex; justify-content: space-between; gap: 12px;
+      padding: 8px 0; border-bottom: 1px solid #f1f3f4;
+      font-size: 13px;
+    }
+    .row:last-child { border-bottom: none; }
+    .row .k { color: #5f6368; flex-shrink: 0; }
+    .row .v {
+      color: #202124; font-weight: 500;
+      text-align: right; word-break: break-all;
+    }
+    code {
+      font-family: 'Roboto Mono', monospace;
+      background: #f1f3f4; color: #202124;
+      padding: 1px 5px; border-radius: 3px; font-size: 12px;
+    }
+    .badge {
+      display: inline-block; font-size: 11px; font-weight: 500;
+      padding: 2px 8px; border-radius: 10px;
+      background: #f1f3f4; color: #5f6368;
+      margin-left: 4px;
+    }
+    .badge.ok    { background: #e6f4ea; color: #137333; }
+    .badge.warn  { background: #fef7e0; color: #b06000; }
+    .badge.error { background: #fce8e6; color: #c5221f; }
+
+    .trigger-item {
+      border: 1px solid #dadce0; border-radius: 6px;
+      padding: 12px 14px; margin-bottom: 8px;
+    }
+    .trigger-title {
+      font-size: 12px; font-weight: 500; color: #5f6368;
+      margin-bottom: 8px; letter-spacing: 0.3px;
+    }
+    dl { margin: 0; }
+    dt {
+      float: left; clear: left; width: 80px;
+      color: #5f6368; font-size: 12px; padding: 3px 0;
+    }
+    dd {
+      margin: 0 0 0 90px; padding: 3px 0;
+      font-size: 13px; word-break: break-all;
+    }
+    .empty {
+      padding: 16px; background: #f8f9fa;
+      border-radius: 6px; color: #5f6368;
+      font-size: 13px; text-align: center; line-height: 1.6;
+    }
+
+    .actions {
+      display: flex; justify-content: flex-end; gap: 8px;
+      margin-top: 16px;
+    }
+    button {
+      font-family: 'Google Sans','Roboto',sans-serif;
+      font-size: 14px; font-weight: 500; letter-spacing: 0.25px;
+      height: 36px; padding: 0 24px;
+      border: none; border-radius: 4px; cursor: pointer;
+      transition: background .15s, box-shadow .15s;
+    }
+    button.text { background: transparent; color: #1a73e8; padding: 0 16px; }
+    button.text:hover { background: rgba(26,115,232,.08); }
+    button.primary { background: #1a73e8; color: #fff; }
+    button.primary:hover {
+      background: #1765cc;
+      box-shadow: 0 1px 2px 0 rgba(60,64,67,.3),
+                  0 1px 3px 1px rgba(60,64,67,.15);
+    }
+  </style>
+</head>
+<body>
+  <h2>排程觸發器狀態</h2>
+
+  <div class="section">
+    <div class="section-title">執行身份</div>
+    <div class="row">
+      <span class="k">目前帳號</span>
+      <span class="v">${esc(data.user)}</span>
+    </div>
+    <div class="row">
+      <span class="k">SENDER_ALIAS</span>
+      <span class="v">${data.senderAlias ? esc(data.senderAlias) : ""}${aliasBadge}</span>
+    </div>
+    <div class="row">
+      <span class="k">SENDER_NAME</span>
+      <span class="v">${nameBadge}</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">觸發器（共 ${data.triggers.length} 個）</div>
+    ${triggerBlock}
+  </div>
+
+  <div class="section">
+    <div class="section-title">已預約區待處理</div>
+    <div class="row">
+      <span class="k">待寄草稿數</span>
+      <span class="v">${data.pendingCount}</span>
+    </div>
+    <div class="row">
+      <span class="k">最近一筆預定時間</span>
+      <span class="v">${data.nextScheduledAt ? esc(data.nextScheduledAt) : "—"}</span>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button type="button" class="primary" onclick="google.script.host.close()">關閉</button>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * 簡易 HTML escape，避免試算表內容（draftId、別名、名稱）
+ * 帶 < > & " 時破壞 HTML 結構或造成 XSS。
+ */
+function escapeHtml_(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * 觸發器入口。掃「已預約區」，挑出：
  *   - 建立者欄等於當前執行身份 (避免處理到別人的列)
  *   - 預定寄送時間 ≤ 現在

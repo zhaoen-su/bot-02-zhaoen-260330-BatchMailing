@@ -10,5 +10,6 @@ function onOpen() {
     .addSeparator()
     .addItem("啟用排程觸發器", "installScheduledTrigger")
     .addItem("停用排程觸發器", "removeScheduledTriggerFromMenu")
+    .addItem("檢查排程觸發器狀態", "checkTriggerStatus")
     .addToUi();
 }

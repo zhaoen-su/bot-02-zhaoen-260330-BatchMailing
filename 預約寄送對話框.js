@@ -141,6 +141,7 @@ function buildScheduleDialogHtml_() {
     }
     .alert.ok    { background: #e6f4ea; color: #137333; }
     .alert.error { background: #fce8e6; color: #c5221f; }
+    .alert.warn  { background: #fef7e0; color: #b06000; }
     .alert:empty { display: none; }
   </style>
 </head>
@@ -168,10 +169,12 @@ function buildScheduleDialogHtml_() {
     </div>
   </form>
   <div id="result" class="alert"></div>
+  <div id="warn" class="alert warn"></div>
   <script>
     const form = document.getElementById('form');
     const submitBtn = document.getElementById('submit');
     const result = document.getElementById('result');
+    const warn = document.getElementById('warn');
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -180,6 +183,7 @@ function buildScheduleDialogHtml_() {
       submitBtn.textContent = '建立中…';
       result.className = 'alert';
       result.textContent = '';
+      warn.textContent = '';
 
       google.script.run
         .withSuccessHandler((r) => {
@@ -187,6 +191,8 @@ function buildScheduleDialogHtml_() {
           result.textContent =
             '已建立 ' + r.successCount + ' 封預約草稿' +
             (r.errors.length ? '\\n\\n錯誤：\\n' + r.errors.join('\\n') : '');
+          warn.textContent =
+            (r.warnings && r.warnings.length) ? '⚠ ' + r.warnings.join('\\n') : '';
           submitBtn.disabled = false;
           submitBtn.textContent = '建立預約';
         })

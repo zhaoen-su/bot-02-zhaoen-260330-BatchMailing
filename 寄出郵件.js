@@ -47,6 +47,9 @@ function runCreateScheduledDrafts_(subjectLine, unifiedTimeStr) {
 
   const rowsToDelete = [];
   const errors = [];
+  // 草稿用到、但「主要操作區」沒有對應欄位的變數名（跨所有列取聯集，
+  // 只提醒一次，避免每列重複洗版）。
+  const missingKeysAll = {};
 
   data.forEach((rowArr, i) => {
     const row = heads.reduce((o, k, j) => {
@@ -66,6 +69,7 @@ function runCreateScheduledDrafts_(subjectLine, unifiedTimeStr) {
 
     try {
       const msgObj = fillInTemplateFromObject_(emailTemplate.message, row);
+      msgObj.missingKeys.forEach((k) => (missingKeysAll[k] = true));
 
       // assertSenderConfigured_ 已確保 alias / name 都非空且 alias 被 Gmail 授權，
       // 所以這裡可以直接組「Name <alias>」而不再 fallback。
@@ -117,7 +121,16 @@ function runCreateScheduledDrafts_(subjectLine, unifiedTimeStr) {
   // 由下往上刪，避免行號偏移。
   rowsToDelete.sort((a, b) => b - a).forEach((r) => mainSheet.deleteRow(r));
 
-  return { successCount: rowsToDelete.length, errors: errors };
+  const missingKeys = Object.keys(missingKeysAll);
+  const warnings = missingKeys.length
+    ? [
+        `草稿用到這些變數，但「主要操作區」沒有同名欄位（已當空白處理）：` +
+          missingKeys.map((k) => `{{${k}}}`).join("、") +
+          `。請確認欄位標題與變數名完全相同（含全形 / 半形、空白）。`,
+      ]
+    : [];
+
+  return { successCount: rowsToDelete.length, errors: errors, warnings: warnings };
 }
 
 /**

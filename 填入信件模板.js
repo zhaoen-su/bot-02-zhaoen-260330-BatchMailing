@@ -124,20 +124,59 @@ function subjectFilter_(subject_line) {
 }
 
 /**
- * Fill template string with data object.
- * @param {object} template object containing subject, text, and html
- * @param {object} data object used to replace {{}} markers
- * @return {object} message replaced with data
+ * 用 data 物件填入模板裡的 {{欄位名}} 變數。
+ *
+ * 對應「{{}} 沒被代入」最常見的兩個原因，做了兩項強化：
+ *
+ *   1. HTML 內文先正規化（normalizePlaceholdersInHtml_）：
+ *      使用者在 Gmail 草稿裡打 {{姓名}} 時，Gmail 編輯器常會在變數名中間
+ *      插入 <span>、&nbsp; 或零寬字元，把 {{ }} 之間切斷，導致
+ *      /{{...}}/ 比對不到、{{姓名}} 就原樣被寄出。先把夾在中間的標記清掉
+ *      還原成乾淨的 {{姓名}}，才比對得到。純文字 / 主旨不會有這問題，不處理。
+ *
+ *   2. 比對到的變數若在「主要操作區」找不到對應欄位，會收集到 missingKeys，
+ *      讓呼叫端可以提醒使用者「草稿用到 {{X}} 但試算表沒有 X 欄」，
+ *      而不是默默變空白、查不出原因。
+ *
+ * @param {object} template { subject, text, html }
+ * @param {object} data     { 欄位名: 值 }
+ * @return {{subject:string, text:string, html:string, missingKeys:string[]}}
  */
 function fillInTemplateFromObject_(template, data) {
+  const missing = {};
+  const has = (key) => Object.prototype.hasOwnProperty.call(data, key);
   const replace = (str) =>
-    String(str).replace(
-      /{{([^{}]+)}}/g,
-      (_, key) => data[key.trim()] ?? "",
-    );
+    String(str).replace(/{{([^{}]+)}}/g, (_, rawKey) => {
+      const key = rawKey.trim();
+      if (!has(key)) {
+        missing[key] = true;
+        return "";
+      }
+      return data[key] ?? "";
+    });
+
   return {
     subject: replace(template.subject),
     text: replace(template.text),
-    html: replace(template.html),
+    html: replace(normalizePlaceholdersInHtml_(template.html)),
+    missingKeys: Object.keys(missing),
   };
+}
+
+/**
+ * 把 HTML 內文裡 {{ ... }} 之間夾雜的 HTML 標籤、&nbsp; 與零寬字元清掉，
+ * 還原成乾淨的 {{欄位名}}。Gmail 編輯器經常把變數名切成
+ * 「{{姓<span ...>名}}」之類，這層先修好再交給變數比對。
+ *
+ * 只處理「braces 仍然成對」的常見情況；若連 {{ 或 }} 本身都被標籤切斷
+ * （例如 {</span>{姓名}}，較少見），這裡救不回來，使用者需把變數整段重打。
+ */
+function normalizePlaceholdersInHtml_(html) {
+  if (!html) return html;
+  return String(html).replace(/{{[\s\S]*?}}/g, (m) =>
+    m
+      .replace(/<[^>]+>/g, "") // 夾在變數名中間的 HTML 標籤
+      .replace(/&nbsp;/g, " ")
+      .replace(/[\u200B-\u200D\uFEFF]/g, ""), // 零寬字元 / BOM
+  );
 }

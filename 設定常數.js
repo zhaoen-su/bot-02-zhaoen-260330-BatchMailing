@@ -14,10 +14,12 @@ const MAIN_COL_SCHEDULED_AT = "預定寄送時間";
 // 必須是 GmailApp.getAliases() 回傳清單內的地址（執行 checkAliases 驗證）。
 //
 // 設定 key：SENDER_ALIAS（例：hr@yourdomain.com）、SENDER_NAME（例：HR 部門）
-const SENDER_ALIAS =
-  PropertiesService.getScriptProperties().getProperty("SENDER_ALIAS") || "";
-const SENDER_NAME =
-  PropertiesService.getScriptProperties().getProperty("SENDER_NAME") || "";
+const SENDER_ALIAS = (
+  PropertiesService.getScriptProperties().getProperty("SENDER_ALIAS") || ""
+).trim();
+const SENDER_NAME = (
+  PropertiesService.getScriptProperties().getProperty("SENDER_NAME") || ""
+).trim();
 
 // 分頁名稱 ────────────────────────────────────────────────
 const SHEET_MAIN = "主要操作區";
@@ -68,7 +70,7 @@ function getSenderIdentity_() {
  * 三種失敗都會直接拋錯：
  *   1. SENDER_ALIAS 為空字串
  *   2. SENDER_NAME 為空字串
- *   3. SENDER_ALIAS 不在 GmailApp.getAliases() 清單內
+ *   3. SENDER_ALIAS 既不是執行身份本人的地址，也不在 GmailApp.getAliases() 清單內
  */
 function assertSenderConfigured_() {
   if (!SENDER_ALIAS) {
@@ -81,12 +83,30 @@ function assertSenderConfigured_() {
       "SENDER_NAME 未設定。請到「專案設定 → 指令碼屬性」新增 key=SENDER_NAME。",
     );
   }
+
+  // 寄件地址只要符合下列兩者之一，Gmail 就會照用、不會默默改回本人帳號：
+  //   (a) 等於目前執行身份本人的地址（用自己帳號寄）
+  //   (b) 是已在 Gmail「以這個地址寄送郵件」驗證過的 send-as 別名
+  //
+  // 關鍵陷阱：GmailApp.getAliases() 只列「額外的 send-as 別名」，不含本人主要
+  // 地址。所以當 SENDER_ALIAS 就是執行者自己的主要地址時，getAliases() 會是空的，
+  // 若只比對別名清單就會把「用自己帳號寄」這個完全合法的情況誤擋。
+  // email 比對去空白、忽略大小寫，避免指令碼屬性裡多打空白或大小寫不同被誤擋。
+  const sameAddr = (a, b) =>
+    String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+
+  const me = Session.getEffectiveUser().getEmail();
+  if (sameAddr(SENDER_ALIAS, me)) return;
+
   const aliases = GmailApp.getAliases();
-  if (aliases.indexOf(SENDER_ALIAS) === -1) {
+  if (!aliases.some((a) => sameAddr(a, SENDER_ALIAS))) {
     throw new Error(
-      `SENDER_ALIAS "${SENDER_ALIAS}" 不在 Gmail 授權清單內。請到 Gmail 設定 →` +
-        `「帳戶和匯入」→「以這個地址寄送郵件」新增並完成驗證，或執行 checkAliases ` +
-        `查看目前可用別名（${aliases.join("、") || "目前清單為空"}）。`,
+      `SENDER_ALIAS "${SENDER_ALIAS}" 既不是目前執行身份（${me}）的地址，` +
+        `也不在 Gmail 已驗證的別名清單內。\n\n` +
+        `若想用 ${me} 寄出：把指令碼屬性 SENDER_ALIAS 改成 ${me}。\n` +
+        `若想用 ${SENDER_ALIAS} 寄出：請先到 Gmail 設定 →「帳戶和匯入」→` +
+        `「以這個地址寄送郵件」新增並完成驗證。\n\n` +
+        `目前可用別名：${aliases.join("、") || "（無，代表這個帳號沒有額外別名）"}`,
     );
   }
 }
